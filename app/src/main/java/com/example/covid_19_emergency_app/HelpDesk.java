@@ -3,11 +3,16 @@ package com.example.covid_19_emergency_app;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
@@ -28,20 +33,34 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
 import androidx.fragment.app.DialogFragment;
 import androidx.fragment.app.Fragment;
 
 import com.example.covid_19_emergency_app.model.User;
+import com.firebase.geofire.GeoFire;
+import com.firebase.geofire.GeoLocation;
+import com.firebase.geofire.GeoQuery;
+import com.firebase.geofire.GeoQueryDataEventListener;
+import com.firebase.geofire.GeoQueryEventListener;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Random;
+import java.util.concurrent.ExecutionException;
 
 import static androidx.constraintlayout.widget.Constraints.TAG;
 import static com.example.covid_19_emergency_app.MainActivity.reff;
@@ -56,7 +75,7 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
     private LocationCallback locationCallback;
     TextView selected;
     Button choice_btn, loc_btn;
-    String choice_data, address_input,address_lat,address_long;
+    String choice_data, address_input, address_lat, address_long;
     Button submit_help;
     EditText address_user;
     Geocoder geocoder;
@@ -66,6 +85,9 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
     private boolean isGPS = false;
     private StringBuilder stringBuilder;
     Context mContext;
+    GeoFire geoFire;
+    GeoQuery geoQuery;
+    DatabaseReference refAidHelper;
 
     // The minimum time between updates in milliseconds
     private static final long MIN_TIME_BW_UPDATES = 1000 * 60 * 1;
@@ -87,7 +109,8 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
         // Inflate the layout for this fragment
         View RootView = inflater.inflate(R.layout.fragment_help_desk, container, false);
 
-
+        geoFire = new GeoFire(reff);
+        refAidHelper = FirebaseDatabase.getInstance().getReference("Aid_Helper");
 
         return RootView;
     }
@@ -138,18 +161,26 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
                 }
                 for (Location location : locationResult.getLocations()) {
                     if (location != null) {
-                        wayLatitude = location.getLatitude();
-                        wayLongitude = location.getLongitude();
-                        if (!isContinue) {
-                            address_user.setText(String.format(Locale.US, "%s - %s", wayLatitude, wayLongitude));
-                        } else {
-                            stringBuilder.append(wayLatitude);
-                            stringBuilder.append("-");
-                            stringBuilder.append(wayLongitude);
-                            stringBuilder.append("\n\n");
-                            address_user.setText(stringBuilder.toString());
-                            getAddress(location);
-                        }
+                        geoFire.setLocation("GeoLocation", new GeoLocation(locationResult.getLastLocation().getLatitude(),
+                                locationResult.getLastLocation().getLongitude()), new GeoFire.CompletionListener() {
+                            @Override
+                            public void onComplete(String key, DatabaseError error) {
+                                wayLatitude = location.getLatitude();
+                                wayLongitude = location.getLongitude();
+                                if (!isContinue) {
+
+                                    address_user.setText(String.format(Locale.US, "%s - %s", wayLatitude, wayLongitude));
+                                } else {
+                                    stringBuilder.append(wayLatitude);
+                                    stringBuilder.append("-");
+                                    stringBuilder.append(wayLongitude);
+                                    stringBuilder.append("\n\n");
+                                    address_user.setText(stringBuilder.toString());
+                                    getAddress(location);
+                                }
+                            }
+                        });
+
                         if (!isContinue && mFusedLocationClient != null) {
                             mFusedLocationClient.removeLocationUpdates(locationCallback);
                         }
@@ -160,7 +191,7 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
         loc_btn.setOnClickListener(v -> {
 
             if (!isGPS) {
-               AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(
+                AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(
                         getContext());
                 alertDialogBuilder
                         .setMessage(
@@ -188,11 +219,12 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
                 return;
             }
             isContinue = true;
-            stringBuilder=new StringBuilder();
+            stringBuilder = new StringBuilder();
             getLocation();
         });
 
     }
+
     private void requestPermission(String permissionName, int permissionRequestCode) {
         ActivityCompat.requestPermissions(getActivity(),
                 new String[]{permissionName}, permissionRequestCode);
@@ -212,10 +244,9 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
                     if (location != null) {
                         wayLatitude = location.getLatitude();
                         wayLongitude = location.getLongitude();
-                      //  address_user.setText(String.format(Locale.US, "%s - %s", wayLatitude, wayLongitude));
+                        //  address_user.setText(String.format(Locale.US, "%s - %s", wayLatitude, wayLongitude));
                         getAddress(location);
-                    }
-                     else {
+                    } else {
                         mFusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
                     }
                 });
@@ -240,10 +271,9 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
                             if (location != null) {
                                 wayLatitude = location.getLatitude();
                                 wayLongitude = location.getLongitude();
-                               // address_user.setText(String.format(Locale.US, "%s - %s", wayLatitude, wayLongitude));
+                                // address_user.setText(String.format(Locale.US, "%s - %s", wayLatitude, wayLongitude));
                                 getAddress(location);
-                            }
-                            else {
+                            } else {
                                 mFusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
                             }
                         });
@@ -265,72 +295,71 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
             }
         }
     }
-    public void getAddress(Location location){
+
+    public void getAddress(Location location) {
         try {
-         //   Toast.makeText(mContext, "dkfjhdfhjdfj", Toast.LENGTH_SHORT).show();
+            //   Toast.makeText(mContext, "dkfjhdfhjdfj", Toast.LENGTH_SHORT).show();
             geocoder = new Geocoder(mContext, Locale.ENGLISH);
-            addresses = geocoder.getFromLocation(location.getLatitude(),location.getLongitude(), 1);
+            addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
             StringBuilder str = new StringBuilder();
             if (geocoder.isPresent()) {
-             //   Toast.makeText(getContext(),
-               //         "geocoder present", Toast.LENGTH_LONG).show();
+                //   Toast.makeText(getContext(),
+                //         "geocoder present", Toast.LENGTH_LONG).show();
                 Address returnAddress = addresses.get(0);
-                String address=returnAddress.getAddressLine(0);
+                String address = returnAddress.getAddressLine(0);
                 String localityString = returnAddress.getLocality();
                 String city = returnAddress.getCountryName();
                 String region_code = returnAddress.getCountryCode();
                 String zipcode = returnAddress.getPostalCode();
-                str.append(address+"  ");
+                str.append(address + "  ");
                 str.append(localityString + " ");
                 str.append(city + " " + region_code + " ");
                 str.append(zipcode + " ");
 
                 address_user.setText(str.toString());
-              //  Toast.makeText(getActivity(), str,
-              //          Toast.LENGTH_SHORT).show();
-               // System.out.println(str);
+                //  Toast.makeText(getActivity(), str,
+                //          Toast.LENGTH_SHORT).show();
+                // System.out.println(str);
             } else {
                 Toast.makeText(getActivity(),
                         "geocoder not present", Toast.LENGTH_SHORT).show();
             }
 
-// } else {
-// Toast.makeText(getApplicationContext(),
-// "address not available", Toast.LENGTH_SHORT).show();
-// }
+            // } else {
+            // Toast.makeText(getApplicationContext(),
+            // "address not available", Toast.LENGTH_SHORT).show();
+            // }
         } catch (IOException e) {
-// TODO Auto-generated catch block
+            // TODO Auto-generated catch block
 
             Log.e("tag", e.getMessage());
         }
     }
 
 
-
-
     public void uploadToFirebase() {
         // data will be uploaded...
         choice_data = selected.getText().toString().trim();
         address_input = address_user.getText().toString().trim();
-       // Toast.makeText(getActivity(), address_input,Toast.LENGTH_SHORT).show();
+        // Toast.makeText(getActivity(), address_input,Toast.LENGTH_SHORT).show();
         try {
-            if(address_input!=null) {
+            if (address_input != null) {
                 acordinates = geocoder.getFromLocationName(address_input, 5);
 
             }
             if (acordinates == null) {
                 Toast.makeText(getActivity(), "empty fields required", Toast.LENGTH_SHORT).show();
-               // return;
+                // return;
             }
         } catch (IOException e) {
 
             e.printStackTrace();
         }
-        if(acordinates!=null&&acordinates.size()>0) {
+        if (acordinates != null && acordinates.size() > 0) {
             Address location = acordinates.get(0);
             address_lat = String.valueOf((location.getLatitude() * 1E6));
             address_long = String.valueOf(location.getLongitude() * 1E6);
-         //   Toast.makeText(getContext(),address_lat,Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), address_lat, Toast.LENGTH_SHORT).show();
         }
         if (TextUtils.isEmpty(address_input) || selected.getText().toString().trim() == "Empty") {
             Toast.makeText(getActivity(), "empty fields required", Toast.LENGTH_SHORT).show();
@@ -338,9 +367,10 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
         }
 
         // Toast.makeText(getActivity(), "Doneee", Toast.LENGTH_SHORT).show();
-        User user = new User(choice_data,address_input);
+        User user = new User(choice_data, address_input);
         reff.child("z_Helper_type").setValue(user);
 
+        applyGeoFencing();
 
         AlertDialog.Builder builder1 = new AlertDialog.Builder(getContext());
         builder1.setMessage("Thanx for providing your Sahyog :)");
@@ -356,7 +386,93 @@ public class HelpDesk extends Fragment implements MultipleChoiceDialogFragment.o
         AlertDialog alert11 = builder1.create();
         alert11.show();
     }
-        public void showDialog() {
+
+    void applyGeoFencing() {
+        //Add GeoQuery here
+        geoQuery = geoFire.queryAtLocation(new GeoLocation(wayLatitude, wayLongitude), 5.0f);//5000km
+        geoQuery.addGeoQueryEventListener(new GeoQueryEventListener() {
+            @Override
+            public void onKeyEntered(String key, GeoLocation location) {
+                //sendNotification("DEVYANK", String.format("%s entered the dangerous area", key));
+                refAidHelper.addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                        for(DataSnapshot dataSnapshot1 : dataSnapshot.getChildren()){
+                            try {
+                                String token = dataSnapshot1.child("token").getValue().toString();
+                                if(new PushNotifictionHelper().execute(token,"Devyank").get().equals("SUCCESS")){
+                                    Log.d(TAG,"Notification Send Successfully");
+                                }else{
+                                    Log.d(TAG,"Notification Not Send");
+                                }
+                            } catch (ExecutionException e) {
+                                e.printStackTrace();
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError databaseError) {
+
+                    }
+                });
+            }
+
+            @Override
+            public void onKeyExited(String key) {
+                //sendNotification("DEVYANK", String.format("%s is no longer in the dangerous area", key));
+            }
+
+            @Override
+            public void onKeyMoved(String key, GeoLocation location) {
+                Log.d("MOVE", String.format("%s moved within the dangerous area [%f/%f]", key, location.latitude, location.longitude));
+            }
+
+            @Override
+            public void onGeoQueryReady() {
+
+            }
+
+            @Override
+            public void onGeoQueryError(DatabaseError error) {
+                Log.e("ERROR", "" + error);
+            }
+        });
+    }
+
+    private void sendNotification(String title, String content) {
+        String NOTIFICATION_CHANNEL_ID = "important_notification";
+        NotificationManager notificationManager = (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE);
+
+        NotificationChannel notificationChannel = null;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            notificationChannel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, "My Notification",
+                    NotificationManager.IMPORTANCE_DEFAULT);
+
+            //Config
+            notificationChannel.setDescription("Channel description");
+            notificationChannel.enableLights(true);
+            notificationChannel.setLightColor(Color.RED);
+            notificationChannel.setVibrationPattern(new long[]{0, 1000, 200, 1000});
+            notificationChannel.enableVibration(true);
+            notificationManager.createNotificationChannel(notificationChannel);
+        }
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(getActivity(), NOTIFICATION_CHANNEL_ID);
+        builder.setContentTitle(title)
+                .setContentText(content)
+                .setAutoCancel(false)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher));
+
+        Notification notification = builder.build();
+        notificationManager.notify(new Random().nextInt(), notification);
+
+    }
+
+    public void showDialog() {
         DialogFragment multiChoiceDialog = new MultipleChoiceDialogFragment(this);
         multiChoiceDialog.setCancelable(false);
         multiChoiceDialog.show(getActivity().getSupportFragmentManager(), "Multichoice Dialog");

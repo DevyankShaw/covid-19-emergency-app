@@ -49,6 +49,7 @@ public class SignUp extends AppCompatActivity {
     int variable = 1;
     EditText otp_text;
     String mob_no;
+    helper_user user;
     private PhoneAuthProvider.OnVerificationStateChangedCallbacks mCallbacks;
 
     @Override
@@ -165,11 +166,15 @@ public class SignUp extends AppCompatActivity {
 
         mobile = t_mobile.getText().toString().trim();
 
-        helper_user user = new helper_user(name, mobile, age);
+        if(variable == 1) {
+            user = new helper_user(name, mobile, age);
+        } else {
+            user = new helper_user(name, mobile, age, MyApplication.token);
+        }
 
 
         Log.e("uid : ", "" + uid);
-        uid = t_mobile.getText().toString();
+        //uid = t_mobile.getText().toString();
         signupRef.child(uid).setValue(user);
 
     }
